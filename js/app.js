@@ -77,7 +77,7 @@
 
   const pending=read('bf_pending_deploy',null);
   const pendingBox=$('#pendingDeploy');
-  if(pendingBox&&pending){pendingBox.classList.remove('hidden');pendingBox.innerHTML=`<strong>${escapeHtml(pending.botName||pending.bot)}</strong><p>Package: ${escapeHtml(pending.package)}</p><p>Price: ${money(pending.price||0)}</p>`;
+  if(pendingBox&&pending){pendingBox.classList.remove('hidden');pendingBox.innerHTML=`<strong>${escapeHtml(pending.botName||pending.bot)}</strong><p>Package: ${escapeHtml(pending.package)}</p><p>Price: ${money(pending.price||0)}</p>`;}
   $('#confirmDemoDeploy')?.addEventListener('click',()=>{
     const p=read('bf_pending_deploy',null);if(!p)return toast('No pending deployment.','warning');
     const s=state(),cost=Number(p.price||0);

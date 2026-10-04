@@ -1,1 +1,1 @@
-(function(){try{const u=JSON.parse(localStorage.getItem('bf_user')||'null');if(!u)location.replace('login.html');else if(u.role!=='admin')location.replace('dashboard.html')}catch{location.replace('login.html')}})();
+(async function(){try{const r=await fetch('/api/auth/me',{credentials:'include'});if(!r.ok)throw 0;const d=await r.json();localStorage.setItem('bf_user',JSON.stringify(d.user));if(d.user.role!=='admin')location.replace('dashboard.html');}catch{localStorage.removeItem('bf_user');location.replace('login.html')}})();

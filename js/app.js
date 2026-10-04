@@ -1,121 +1,30 @@
 (function(){
-  const C=window.BOTFORGE_CONFIG||{};
-  const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
-  const read=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch{return d}};
-  const write=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
-  const toast=(msg,type='info')=>{let box=$('#toast');if(!box){box=document.createElement('div');box.id='toast';document.body.appendChild(box)}const el=document.createElement('div');el.className='toast '+type;el.setAttribute('role','status');el.textContent=msg;box.appendChild(el);setTimeout(()=>el.remove(),3600)};
-  const user=()=>read('bf_user',null);
-  const money=n=>`${C.currency||'KES'} ${Number(n||0).toLocaleString('en-KE',{minimumFractionDigits:2})}`;
-  const defaultState=()=>({wallet:0,notifications:[],deployments:[],transactions:[],rewards:{points:0,referrals:0,earned:0}});
-  const state=()=>({...defaultState(),...read('bf_state',{})});
-  const saveState=s=>write('bf_state',s);
-  const addNotification=(title,message,type='info')=>{const s=state();s.notifications.unshift({id:'n_'+Date.now(),title,message,type,at:new Date().toLocaleString(),read:false});s.notifications=s.notifications.slice(0,50);saveState(s)};
-  window.BF={toast,user,money,read,write,state,saveState,addNotification};
-
-  const theme=localStorage.getItem('bf_theme')||'light';
-  document.documentElement.dataset.theme=theme;
-  document.addEventListener('click',e=>{
-    const t=e.target.closest('[data-theme]');
-    if(t){const next=document.documentElement.dataset.theme==='dark'?'light':'dark';document.documentElement.dataset.theme=next;localStorage.setItem('bf_theme',next);$$('[data-theme]').forEach(b=>b.textContent=next==='dark'?'☀':'☾')}
-    const menu=e.target.closest('[data-menu]');
-    if(menu){document.body.classList.toggle('nav-open');menu.setAttribute('aria-expanded',document.body.classList.contains('nav-open'))}
-    if(e.target.closest('[data-close-nav]')||e.target.closest('.nav-backdrop'))document.body.classList.remove('nav-open');
-  });
-  $$('[data-theme]').forEach(b=>b.textContent=theme==='dark'?'☀':'☾');
-
-  const path=location.pathname.split('/').pop()||'index.html';
-  $$('.side-link[href]').forEach(a=>{if(a.getAttribute('href')===path)a.classList.add('active')});
-
-  const grid=$('#botGrid');
-  if(grid){
-    const bots=Array.isArray(C.bots)?C.bots:[];
-    grid.innerHTML=bots.length?bots.map(b=>`<article class="card bot-card"><span class="status">Available</span><h3>${escapeHtml(b.name)}</h3><p>${escapeHtml(b.description)}</p><div class="card-meta"><strong>${money(b.price)}</strong><span>${escapeHtml(b.category)}</span></div><a class="btn" href="deploy.html?bot=${encodeURIComponent(b.id)}">View details</a></article>`).join(''):'<div class="empty"><div class="empty-icon">{ }</div><div class="eyebrow">BOT MARKETPLACE</div><h3>No bots available yet</h3><p>New hosting options are being prepared.</p></div>';
-    $('#botSearch')?.addEventListener('input',e=>{const q=e.target.value.toLowerCase();$$('.bot-card').forEach(c=>c.hidden=!c.textContent.toLowerCase().includes(q))});
-  }
-
-  const u=user();
-  const n=$('#userName');if(n)n.textContent=u?.name||u?.email?.split('@')[0]||'there';
-  const date=$('#currentDate');if(date)date.textContent=new Intl.DateTimeFormat('en-US',{dateStyle:'full'}).format(new Date());
-  const time=$('#currentTime');if(time){const tick=()=>time.textContent=new Intl.DateTimeFormat('en-US',{hour:'numeric',minute:'2-digit'}).format(new Date());tick();setInterval(tick,30000)}
-
-  const s=state();
-  const bal=$('#walletBalance');if(bal)bal.textContent=money(s.wallet);
-  const depCount=$('#activeBots');if(depCount)depCount.textContent=s.deployments.filter(x=>['Running','Deploying'].includes(x.status)).length;
-  const notifCount=$('#notificationCount');if(notifCount)notifCount.textContent=s.notifications.filter(x=>!x.read).length;
-  const rewardPoints=$('#rewardPoints');if(rewardPoints)rewardPoints.textContent=String(s.rewards.points||0);
-
-  const dep=$('#deployments');
-  if(dep){
-    dep.innerHTML=s.deployments.length?s.deployments.map(x=>`<article class="card"><div class="row-between"><span class="status ${x.status==='Running'?'':'off'}">${escapeHtml(x.status||'Pending')}</span><span class="small">${escapeHtml(x.created||'')}</span></div><h3>${escapeHtml(x.bot||'Bot deployment')}</h3><p>Package: ${escapeHtml(x.package||'—')}</p><p>Session: <code>${escapeHtml(x.sessionMasked||'protected')}</code></p><div class="hero-actions"><button class="btn ghost" data-deploy-action="stop" data-id="${x.id}">Stop</button><button class="btn ghost" data-deploy-action="restart" data-id="${x.id}">Restart</button><button class="btn danger" data-deploy-action="delete" data-id="${x.id}">Delete</button></div></article>`).join(''):'<div class="empty"><div class="empty-icon">⌘</div><div class="eyebrow">DEPLOYMENTS</div><h3>No deployments yet</h3><p>Choose an available bot to start your first deployment.</p><a class="btn" href="bots.html">Browse bots</a></div>';
-  }
-
-  document.addEventListener('click',e=>{
-    const b=e.target.closest('[data-deploy-action]');if(!b)return;
-    const s=state(),x=s.deployments.find(d=>d.id===b.dataset.id);if(!x)return;
-    if(b.dataset.deployAction==='delete')s.deployments=s.deployments.filter(d=>d.id!==x.id);
-    if(b.dataset.deployAction==='stop')x.status='Stopped';
-    if(b.dataset.deployAction==='restart')x.status='Running';
-    saveState(s);addNotification('Deployment updated',`${x.bot} is now ${b.dataset.deployAction==='delete'?'deleted':x.status}.`);location.reload();
-  });
-
-  const payNum=$('#payNumber');if(payNum)payNum.textContent=C.paymentNumber||'Payment provider not configured';
-  const params=new URLSearchParams(location.search),botId=params.get('bot');
-  const title=$('#botTitle');
-  if(title&&botId){const bot=(C.bots||[]).find(b=>String(b.id)===botId);if(bot){title.textContent=bot.name;$('#botDesc').textContent=bot.description||'';const price=$('#botPrice');if(price)price.textContent=money(bot.price)}}
-
-  const amount=$('#amount');
-  $$('.amount-btn').forEach(b=>b.addEventListener('click',()=>{if(amount)amount.value=b.dataset.amount}));
-  $('#payBtn')?.addEventListener('click',()=>{
-    const n=Number(amount?.value);
-    if(!Number.isFinite(n)||n<C.minDeposit||n>C.maxDeposit||n%50!==0)return toast(`Enter an amount from ${money(C.minDeposit)} to ${money(C.maxDeposit)} in KSh 50 steps.`,'warning');
-    const s=state();
-    if($('#demoDeposit')?.checked){
-      s.wallet+=n;s.transactions.unshift({id:'tx_'+Date.now(),type:'deposit',amount:n,status:'demo-confirmed',at:new Date().toLocaleString()});
-      saveState(s);addNotification('Demo deposit credited',`${money(n)} was added to your wallet for testing.`,'payment');toast('Demo deposit credited to wallet.','success');setTimeout(()=>location.reload(),500);
-    }else toast('A real deposit requires a verified server-side payment provider/webhook.','warning');
-  });
-
-  const pending=read('bf_pending_deploy',null);
-  const pendingBox=$('#pendingDeploy');
-  if(pendingBox&&pending){pendingBox.classList.remove('hidden');pendingBox.innerHTML=`<strong>${escapeHtml(pending.botName||pending.bot)}</strong><p>Package: ${escapeHtml(pending.package)}</p><p>Price: ${money(pending.price||0)}</p>`;}
-  $('#confirmDemoDeploy')?.addEventListener('click',()=>{
-    const p=read('bf_pending_deploy',null);if(!p)return toast('No pending deployment.','warning');
-    const s=state(),cost=Number(p.price||0);
-    if(s.wallet<cost)return toast(`Insufficient wallet balance. Add ${money(cost-s.wallet)} first.`,'warning');
-    s.wallet-=cost;
-    const d={id:'dep_'+Date.now(),bot:p.botName||p.bot||'Bot',package:p.package,status:'Running',created:new Date().toLocaleString(),sessionMasked:p.sessionMasked};
-    s.deployments.unshift(d);s.transactions.unshift({id:'tx_'+Date.now(),type:'deployment',amount:-cost,status:'demo-confirmed',at:new Date().toLocaleString(),deploymentId:d.id});
-    saveState(s);localStorage.removeItem('bf_pending_deploy');addNotification('Deployment started',`${d.bot} is now running.`,'deploy');toast('Demo deployment started.','success');setTimeout(()=>location.href='dashboard.html',600);
-  });
-
-  const deployForm=$('#deployForm');
-  if(deployForm)deployForm.addEventListener('submit',e=>{
-    e.preventDefault();if(!user())return location.href='login.html';
-    const session=$('#session')?.value.trim(),pkg=$('#package')?.value||'50-20';
-    if(!/^[A-Za-z0-9:_./?=&+\\-]{8,512}$/.test(session))return toast('Session ID/link must be 8–512 valid characters.','warning');
-    const bot=(C.bots||[]).find(b=>String(b.id)===botId),price=Number(bot?.price||String(pkg).split('-')[0]||0);
-    localStorage.setItem('bf_pending_deploy',JSON.stringify({bot:botId||'bot',botName:bot?.name||'Bot',package:pkg,price,created:new Date().toISOString(),sessionMasked:session.slice(0,4)+'••••'+session.slice(-3)}));
-    location.href='payment.html?deploy=1';
-  });
-
-  const notifyList=$('#notificationList');
-  if(notifyList){
-    const ns=s.notifications;
-    notifyList.innerHTML=ns.length?ns.map(x=>`<article class="card ${x.read?'':'unread'}"><div class="row-between"><strong>${escapeHtml(x.title||'Notification')}</strong><span class="small">${escapeHtml(x.at||'')}</span></div><p>${escapeHtml(x.message||'')}</p><button class="btn ghost" data-read-notification="${x.id}" ${x.read?'disabled':''}>${x.read?'Read':'Mark as read'}</button></article>`).join(''):'<div class="empty"><div class="empty-icon">✓</div><h3>You are all caught up</h3><p>No notifications yet.</p></div>';
-    $('#markRead')?.addEventListener('click',()=>{const st=state();st.notifications=st.notifications.map(x=>({...x,read:true}));saveState(st);location.reload()});
-    notifyList.addEventListener('click',e=>{const b=e.target.closest('[data-read-notification]');if(!b)return;const st=state(),n=st.notifications.find(x=>x.id===b.dataset.readNotification);if(n)n.read=true;saveState(st);location.reload()});
-  }
-
-  const rewardBox=$('#rewardBox');
-  if(rewardBox){
-    const r=s.rewards||{points:0,referrals:0,earned:0};
-    rewardBox.innerHTML=`<div class="stats-grid"><div class="stat"><span class="eyebrow">POINTS</span><strong>${r.points||0}</strong></div><div class="stat"><span class="eyebrow">REFERRALS</span><strong>${r.referrals||0}</strong></div><div class="stat"><span class="eyebrow">EARNED</span><strong>${money(r.earned||0)}</strong></div></div>`;
-  }
-  $('#redeemForm')?.addEventListener('submit',e=>{e.preventDefault();const code=$('#redeemCode').value.trim().toUpperCase();const rewards={WELCOME50:50,START10:10,BF100:100};if(!rewards[code])return toast('Invalid or expired demo reward code.','warning');const st=state();st.wallet+=rewards[code];st.rewards={...st.rewards,points:(st.rewards.points||0)+rewards[code],earned:(st.rewards.earned||0)+rewards[code]};st.transactions.unshift({id:'tx_'+Date.now(),type:'reward',amount:rewards[code],status:'demo-redeemed',code,at:new Date().toLocaleString()});saveState(st);addNotification('Reward redeemed',`${money(rewards[code])} demo credit added.`,'reward');toast('Reward redeemed successfully.','success');e.target.reset();setTimeout(()=>location.reload(),400)});
-
-  const reward=$('#referralLink');
-  if(reward){const base=location.href.split('/').slice(0,-1).join('/');reward.value=base+'/register.html?ref='+(user()?.email||'user').replace(/[^a-z0-9]/gi,'').slice(0,16);$('#copyReferral')?.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(reward.value);toast('Referral link copied.','success')}catch{reward.select();document.execCommand('copy');toast('Referral link copied.','success')}})}
-
-  $('#recoveryForm')?.addEventListener('submit',e=>{e.preventDefault();const code=$('#recoveryCode')?.value.trim();if(code!=='RECOVER-DEMO')return toast('Use the demo recovery code RECOVER-DEMO for this frontend test.','warning');addNotification('Recovery completed','Your demo recovery request was completed.','recovery');toast('Demo recovery completed.','success')});
-  function escapeHtml(v){return String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
+const C=window.BOTFORGE_CONFIG||{},$=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
+const api=(p,o={})=>fetch('/api'+p,{credentials:'include',headers:{'Content-Type':'application/json',...(o.headers||{})},...o}).then(async r=>{const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'Request failed');return d});
+const toast=(m,t='info')=>{let b=$('#toast');if(!b){b=document.createElement('div');b.id='toast';document.body.appendChild(b)}const x=document.createElement('div');x.className='toast '+t;x.textContent=m;b.appendChild(x);setTimeout(()=>x.remove(),3600)};
+const money=n=>`${C.currency||'KES'} ${Number(n||0).toLocaleString('en-KE',{minimumFractionDigits:2})}`;
+const esc=v=>String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+window.BF={toast,money,api};
+const theme=localStorage.getItem('bf_theme')||'light';document.documentElement.dataset.theme=theme;
+document.addEventListener('click',e=>{const t=e.target.closest('[data-theme]');if(t){const n=document.documentElement.dataset.theme==='dark'?'light':'dark';document.documentElement.dataset.theme=n;localStorage.setItem('bf_theme',n);$$('[data-theme]').forEach(b=>b.textContent=n==='dark'?'☀':'☾')}const m=e.target.closest('[data-menu]');if(m){document.body.classList.toggle('nav-open');m.setAttribute('aria-expanded',document.body.classList.contains('nav-open'))}if(e.target.closest('[data-close-nav]'))document.body.classList.remove('nav-open')});
+$$('[data-theme]').forEach(b=>b.textContent=theme==='dark'?'☀':'☾');
+const path=location.pathname.split('/').pop()||'index.html';$$('.side-link[href]').forEach(a=>{if(a.getAttribute('href')===path)a.classList.add('active')});
+$$('[data-logout],#logout').forEach(b=>b.addEventListener('click',async e=>{e.preventDefault();await fetch('/api/auth/logout',{method:'POST',credentials:'include'}).catch(()=>{});localStorage.removeItem('bf_user');location.href='login.html'}));
+const grid=$('#botGrid');if(grid){grid.innerHTML=(C.bots||[]).map(b=>`<article class="card bot-card"><span class="status">Available</span><h3>${esc(b.name)}</h3><p>${esc(b.description)}</p><div class="card-meta"><strong>${money(b.price)}</strong><span>${esc(b.category)}</span></div><a class="btn" href="deploy.html?bot=${encodeURIComponent(b.id)}">View details</a></article>`).join('')||'<div class="empty"><h3>No bots available yet</h3></div>';$('#botSearch')?.addEventListener('input',e=>{const q=e.target.value.toLowerCase();$$('.bot-card').forEach(c=>c.hidden=!c.textContent.toLowerCase().includes(q))})}
+const params=new URLSearchParams(location.search),botId=params.get('bot'),bot=(C.bots||[]).find(b=>String(b.id)===botId);
+if($('#botTitle')&&bot){$('#botTitle').textContent=bot.name;$('#botDesc').textContent=bot.description||'';if($('#botPrice'))$('#botPrice').textContent=money(bot.price)}
+if($('#payNumber'))$('#payNumber').textContent=C.paymentNumber||'Payment provider not configured';
+$$('.amount-btn').forEach(b=>b.addEventListener('click',()=>{if($('#amount'))$('#amount').value=b.dataset.amount}));
+$('#payBtn')?.addEventListener('click',async()=>{const n=Number($('#amount')?.value);if(!Number.isFinite(n)||n<C.minDeposit||n>C.maxDeposit||n%50!==0)return toast(`Enter an amount from ${money(C.minDeposit)} to ${money(C.maxDeposit)} in KSh 50 steps.`,'warning');if(!$('#demoDeposit')?.checked)return toast('Real deposits require a verified payment provider/webhook.','warning');try{await api('/wallet/demo-credit',{method:'POST',body:JSON.stringify({amount:n})});toast('Demo deposit credited.','success');setTimeout(()=>location.reload(),400)}catch(e){toast(e.message,'warning')}});
+$('#deployForm')?.addEventListener('submit',e=>{e.preventDefault();const session=$('#session')?.value.trim(),pkg=$('#package')?.value||'50-20';if(!/^[A-Za-z0-9:_./?=&+\-]{8,512}$/.test(session))return toast('Session ID/link must be 8–512 valid characters.','warning');const price=Number(bot?.price||String(pkg).split('-')[0]||0);localStorage.setItem('bf_pending_deploy',JSON.stringify({botId:botId||'bot',botName:bot?.name||'Bot',package:pkg,price,sessionMasked:session.slice(0,4)+'••••'+session.slice(-3),session}));location.href='payment.html?deploy=1'});
+const pending=(()=>{try{return JSON.parse(localStorage.getItem('bf_pending_deploy')||'null')}catch{return null}})();if($('#pendingDeploy')&&pending){$('#pendingDeploy').classList.remove('hidden');$('#pendingDeploy').innerHTML=`<strong>${esc(pending.botName)}</strong><p>Package: ${esc(pending.package)}</p><p>Price: ${money(pending.price)}</p>`}
+$('#confirmDemoDeploy')?.addEventListener('click',async()=>{if(!pending)return toast('No pending deployment.','warning');try{await api('/deployments',{method:'POST',body:JSON.stringify({botId:pending.botId,botName:pending.botName,packageName:pending.package,price:pending.price,session:pending.session})});localStorage.removeItem('bf_pending_deploy');toast('Deployment started.','success');setTimeout(()=>location.href='dashboard.html',500)}catch(e){toast(e.message,'warning')}});
+async function hydrate(){try{const me=await api('/auth/me');localStorage.setItem('bf_user',JSON.stringify(me.user));if($('#userName'))$('#userName').textContent=me.user.name||me.user.email.split('@')[0];const d=await api('/me/state');if($('#walletBalance'))$('#walletBalance').textContent=money(d.wallet);if($('#activeBots'))$('#activeBots').textContent=(d.deployments||[]).filter(x=>['Running','Deploying'].includes(x.status)).length;if($('#notificationCount'))$('#notificationCount').textContent=(d.notifications||[]).filter(x=>!x.read).length;if($('#rewardPoints'))$('#rewardPoints').textContent=String(d.rewards?.points||0);
+const deps=$('#deployments');if(deps)deps.innerHTML=d.deployments?.length?d.deployments.map(x=>`<article class="card"><div class="row-between"><span class="status ${x.status==='Running'?'':'off'}">${esc(x.status)}</span><span class="small">${esc(x.created)}</span></div><h3>${esc(x.bot)}</h3><p>Package: ${esc(x.package)}</p><p>Session: <code>${esc(x.sessionMasked||'protected')}</code></p><div class="hero-actions"><button class="btn ghost" data-deploy-action="stop" data-id="${x.id}">Stop</button><button class="btn ghost" data-deploy-action="restart" data-id="${x.id}">Restart</button><button class="btn danger" data-deploy-action="delete" data-id="${x.id}">Delete</button></div></article>`).join(''):'<div class="empty"><h3>No deployments yet</h3><p>Choose an available bot to start your first deployment.</p><a class="btn" href="bots.html">Browse bots</a></div>';
+const ns=$('#notificationList');if(ns)ns.innerHTML=d.notifications?.length?d.notifications.map(x=>`<article class="card ${x.read?'':'unread'}"><div class="row-between"><strong>${esc(x.title)}</strong><span class="small">${esc(x.at)}</span></div><p>${esc(x.message)}</p><button class="btn ghost" data-read-notification="${x.id}" ${x.read?'disabled':''}>${x.read?'Read':'Mark as read'}</button></article>`).join(''):'<div class="empty"><h3>You are all caught up</h3></div>';
+}catch(e){if(location.pathname.includes('dashboard')||location.pathname.includes('payment')||location.pathname.includes('deploy')||location.pathname.includes('notifications'))toast(e.message,'warning')}}
+document.addEventListener('click',async e=>{const b=e.target.closest('[data-deploy-action]');if(b){try{await api('/deployments/'+encodeURIComponent(b.dataset.id)+'/action',{method:'POST',body:JSON.stringify({action:b.dataset.deployAction})});location.reload()}catch(x){toast(x.message,'warning')}}const n=e.target.closest('[data-read-notification]');if(n){try{await api('/me/notifications/'+encodeURIComponent(n.dataset.readNotification)+'/read',{method:'POST'});location.reload()}catch(x){toast(x.message,'warning')}}});
+$('#markRead')?.addEventListener('click',async()=>{const cards=$$('#notificationList [data-read-notification]');for(const b of cards){if(!b.disabled)await api('/me/notifications/'+encodeURIComponent(b.dataset.readNotification)+'/read',{method:'POST'}).catch(()=>{})}location.reload()});
+const date=$('#currentDate');if(date)date.textContent=new Intl.DateTimeFormat('en-US',{dateStyle:'full'}).format(new Date());const time=$('#currentTime');if(time){const tick=()=>time.textContent=new Intl.DateTimeFormat('en-US',{hour:'numeric',minute:'2-digit'}).format(new Date());tick();setInterval(tick,30000)}
+hydrate();
 })();

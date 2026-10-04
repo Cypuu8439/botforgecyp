@@ -10,7 +10,8 @@ const {OAuth2Client}=require('google-auth-library');
 
 const app=express();
 const PORT=process.env.PORT||3000;
-const JWT_SECRET=process.env.JWT_SECRET||'change-this-development-secret';
+const JWT_SECRET=process.env.JWT_SECRET||'';
+if(process.env.NODE_ENV==='production'&&!JWT_SECRET)throw new Error('JWT_SECRET must be configured in production.');
 const GOOGLE_CLIENT_ID=process.env.GOOGLE_CLIENT_ID||'';
 const GOOGLE_CLIENT_SECRET=process.env.GOOGLE_CLIENT_SECRET||'';
 const GOOGLE_REDIRECT_URI=process.env.GOOGLE_REDIRECT_URI||'';
@@ -47,18 +48,21 @@ app.use(cookieParser());
 
 
 app.get('/api/auth/google',(req,res)=>{
+  res.set('Cache-Control','no-store');
   if(!googleClient)return res.status(503).send('Google sign-in is not configured on the server.');
   const state=crypto.randomBytes(32).toString('hex');
   res.cookie('bf_oauth_state',state,{httpOnly:true,sameSite:'lax',secure:process.env.NODE_ENV==='production',maxAge:10*60*1000,path:'/'});
-  const url=googleClient.generateAuthUrl({access_type:'offline',scope:['openid','email','profile'],prompt:'select_account',state});
+  const url=googleClient.generateAuthUrl({access_type:'online',scope:['openid','email','profile'],prompt:'select_account',state});
   res.redirect(url);
 });
 app.get('/api/auth/google/callback',async(req,res)=>{
+  res.set('Cache-Control','no-store');
   try{
     if(!googleClient)return res.status(503).send('Google sign-in is not configured on the server.');
     const state=String(req.query.state||''),saved=String(req.cookies.bf_oauth_state||'');
     res.clearCookie('bf_oauth_state',{httpOnly:true,sameSite:'lax',secure:process.env.NODE_ENV==='production',path:'/'});
-    if(!state||!saved||!crypto.timingSafeEqual(Buffer.from(state),Buffer.from(saved)))return res.status(400).send('Google sign-in could not be verified. Please try again.');
+    const stateOk=state.length===saved.length&&crypto.timingSafeEqual(Buffer.from(state),Buffer.from(saved));
+    if(!state||!saved||!stateOk)return res.status(400).send('Google sign-in could not be verified. Please try again.');
     const code=String(req.query.code||'');
     if(!code)return res.status(400).send('Google did not return an authorization code.');
     const {tokens}=await googleClient.getToken(code);
@@ -109,7 +113,9 @@ app.post('/api/auth/register',async(req,res)=>{
 
 app.post('/api/auth/login',async(req,res)=>{
   const {email,password}=req.body||{}; const db=readDb(); const u=db.users.find(x=>x.email===String(email||'').trim().toLowerCase());
-  if(!u||!(await bcrypt.compare(String(password||''),u.passwordHash)))return res.status(401).json({error:'Invalid email or password.'});
+  if(!u)return res.status(401).json({error:'Invalid email or password.'});
+  if(!u.passwordHash)return res.status(401).json({error:'This account uses Google sign-in. Continue with Google.'});
+  if(!(await bcrypt.compare(String(password||''),u.passwordHash)))return res.status(401).json({error:'Invalid email or password.'});
   if(u.status==='blocked')return res.status(403).json({error:'This account is blocked. Contact support.'});
   if(u.status==='suspended')return res.status(403).json({error:'This account is suspended. Contact support.'});
   audit(db,u.id,'login',[u.id]);writeDb(db);setSession(res,u);res.json({user:publicUser(u)});
@@ -178,7 +184,8 @@ app.get('/api/admin/export/users',auth,admin,(req,res)=>{const rows=[['id','name
 app.get('/api/admin/export/audit',auth,admin,(req,res)=>{const rows=[['when','actor','action','targets','note']].concat((req.db.audit||[]).map(a=>[a.at,a.actor,a.action,(a.targetIds||[]).length,a.note||'']));res.type('text/csv').send(rows.map(r=>r.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(',')).join('\n'));});
 app.get('/api/health',(req,res)=>res.json({ok:true,service:'BFBotForge Cyp',time:new Date().toISOString()}));
 
-app.use(express.static(ROOT,{index:'index.html'}));
+app.use(['/data','/server.js','/package.json','/package-lock.json','/vercel.json'],(req,res)=>res.status(404).send('Not found'));
+app.use(express.static(ROOT,{index:'index.html',dotfiles:'ignore'}));
 app.use('/api',(req,res)=>res.status(404).json({error:'API route not found'}));
 app.use((req,res)=>res.status(404).sendFile(path.join(ROOT,'404.html')));
 

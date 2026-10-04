@@ -55,12 +55,11 @@ app.use(express.json({limit:'1mb'}));
 app.use(cookieParser());
 
 
-app.get('/api/auth/google',(req,res)=>{
+app.get('/api/auth/google',async(req,res)=>{
   res.set('Cache-Control','no-store');
   if(!supabase)return res.status(503).send('Supabase authentication is not configured on the server.');
   const redirectTo=process.env.SUPABASE_AUTH_REDIRECT_URI||(`${req.protocol}://${req.get('host')}/auth-callback.html`);
-  const {data,error}=supabase.auth.signInWithOAuth({provider:'google',options:{redirectTo}});
-  Promise.resolve(data).then(result=>{if(error||!result?.url)return res.status(503).send('Google sign-in could not be started.');res.redirect(result.url);}).catch(()=>res.status(500).send('Google sign-in could not be started.'));
+  try{const {data,error}=await supabase.auth.signInWithOAuth({provider:'google',options:{redirectTo}});if(error||!data?.url)return res.status(503).send(error?.message||'Google sign-in could not be started.');res.redirect(data.url);}catch(err){console.error('Google OAuth start error:',err);res.status(500).send('Google sign-in could not be started.');}
 });
 
 app.post('/api/auth/supabase-session',async(req,res)=>{

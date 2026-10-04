@@ -57,53 +57,37 @@ app.use(cookieParser());
 
 app.get('/api/auth/google',(req,res)=>{
   res.set('Cache-Control','no-store');
-  if(!googleClient)return res.status(503).send('Google sign-in is not configured on the server.');
-  const state=crypto.randomBytes(32).toString('hex');
-  res.cookie('bf_oauth_state',state,{httpOnly:true,sameSite:'lax',secure:process.env.NODE_ENV==='production',maxAge:10*60*1000,path:'/'});
-  const url=googleClient.generateAuthUrl({access_type:'online',scope:['openid','email','profile'],prompt:'select_account',state});
-  res.redirect(url);
+  if(!supabase)return res.status(503).send('Supabase authentication is not configured on the server.');
+  const redirectTo=process.env.SUPABASE_AUTH_REDIRECT_URI||(`${req.protocol}://${req.get('host')}/auth-callback.html`);
+  const {data,error}=supabase.auth.signInWithOAuth({provider:'google',options:{redirectTo}});
+  Promise.resolve(data).then(result=>{if(error||!result?.url)return res.status(503).send('Google sign-in could not be started.');res.redirect(result.url);}).catch(()=>res.status(500).send('Google sign-in could not be started.'));
 });
-app.get('/api/auth/google/callback',async(req,res)=>{
-  res.set('Cache-Control','no-store');
+
+app.post('/api/auth/supabase-session',async(req,res)=>{
   try{
-    if(!googleClient)return res.status(503).send('Google sign-in is not configured on the server.');
-    const state=String(req.query.state||''),saved=String(req.cookies.bf_oauth_state||'');
-    res.clearCookie('bf_oauth_state',{httpOnly:true,sameSite:'lax',secure:process.env.NODE_ENV==='production',path:'/'});
-    const stateOk=state.length===saved.length&&crypto.timingSafeEqual(Buffer.from(state),Buffer.from(saved));
-    if(!state||!saved||!stateOk)return res.status(400).send('Google sign-in could not be verified. Please try again.');
-    const code=String(req.query.code||'');
-    if(!code)return res.status(400).send('Google did not return an authorization code.');
-    const {tokens}=await googleClient.getToken(code);
-    if(!tokens.id_token)return res.status(400).send('Google did not return a valid identity token.');
-    const ticket=await googleClient.verifyIdToken({idToken:tokens.id_token,audience:GOOGLE_CLIENT_ID});
-    const p=ticket.getPayload();
-    if(!p?.sub||!p.email||p.email_verified!==true)return res.status(400).send('Your Google account email could not be verified.');
-    if(!supabase)return res.status(503).send('Supabase is not configured. Please try again later.');
-    const {data:supa,error:supaError}=await supabase.auth.signInWithIdToken({provider:'google',token:tokens.id_token});
-    if(supaError||!supa?.user)return res.status(400).send('Google sign-in is not enabled in Supabase. Enable the Google provider and try again.');
-    const db=readDb(),email=String(supa.user.email||p.email).trim().toLowerCase();
-    let u=db.users.find(x=>x.googleId===p.sub)||db.users.find(x=>x.email===email);
+    if(!supabase)return res.status(503).json({error:'Supabase authentication is not configured on the server.'});
+    const token=String(req.body?.access_token||'').trim();
+    if(!token)return res.status(400).json({error:'Google session token is missing.'});
+    const {data,error}=await supabase.auth.getUser(token);
+    if(error||!data?.user)return res.status(401).json({error:'Google session could not be verified.'});
+    const u0=data.user,meta=u0.user_metadata||{},email=String(u0.email||'').toLowerCase();
+    const db=readDb();
+    let u=db.users.find(x=>x.supabaseId===u0.id||x.email===email);
     if(u){
-      if(u.status==='blocked'||u.status==='suspended')return res.status(403).send('This account is not available. Contact support.');
-      u.googleId=p.sub;
-      if(!u.name&&p.name)u.name=String(p.name);
-      if(!u.avatar&&p.picture)u.avatar=String(p.picture);
+      u.supabaseId=u0.id;
+      u.email=email;
+      if(!u.name&&meta.full_name)u.name=String(meta.full_name);
+      if(!u.avatar&&(meta.avatar_url||meta.picture))u.avatar=String(meta.avatar_url||meta.picture);
     }else{
       const base=(email.split('@')[0]||'user').toLowerCase().replace(/[^a-z0-9_.-]/g,'').slice(0,24)||'user';
       let username=base,n=1;
       while(db.users.some(x=>x.username===username))username=base.slice(0,20)+'_'+n++;
-      u={id:id('usr'),name:String(p.name||email.split('@')[0]).trim(),username,email,phone:'',googleId:p.sub,avatar:p.picture?String(p.picture):'',passwordHash:null,role:'user',status:'active',created:new Date().toISOString()};
+      u={id:u0.id,name:String(meta.full_name||meta.name||email.split('@')[0]),username,email,phone:String(meta.phone||''),googleId:u0.app_metadata?.provider==='google'?u0.user_metadata?.sub||null:null,avatar:String(meta.avatar_url||meta.picture||''),passwordHash:null,role:'user',status:'active',created:u0.created_at||new Date().toISOString(),supabaseId:u0.id};
       db.users.push(u);
       db.notifications.push({id:id('n'),userId:u.id,title:'Welcome to BFBotForge Cyp',message:'Your Google account is connected. Your hosting dashboard is ready.',type:'welcome',read:false,at:new Date().toISOString()});
-      audit(db,u.id,'google_register',[u.id]);
     }
-    audit(db,u.id,'google_login',[u.id]);
-    writeDb(db);setSession(res,u);
-    res.redirect(u.role==='admin'?'/admin.html':'/dashboard.html');
-  }catch(err){
-    console.error('Google OAuth error:',err);
-    res.status(500).send('Google sign-in failed. Please try again.');
-  }
+    audit(db,u.id,'google_login',[u.id]);writeDb(db);setSession(res,u);res.json({user:publicUser(u)});
+  }catch(err){console.error('Supabase session error:',err);res.status(500).json({error:'Google sign-in failed. Please try again.'});}
 });
 
 app.post('/api/auth/register',async(req,res)=>{

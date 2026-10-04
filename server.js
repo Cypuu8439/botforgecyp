@@ -78,7 +78,10 @@ app.get('/api/auth/google/callback',async(req,res)=>{
     const ticket=await googleClient.verifyIdToken({idToken:tokens.id_token,audience:GOOGLE_CLIENT_ID});
     const p=ticket.getPayload();
     if(!p?.sub||!p.email||p.email_verified!==true)return res.status(400).send('Your Google account email could not be verified.');
-    const db=readDb(),email=String(p.email).trim().toLowerCase();
+    if(!supabase)return res.status(503).send('Supabase is not configured. Please try again later.');
+    const {data:supa,error:supaError}=await supabase.auth.signInWithIdToken({provider:'google',token:tokens.id_token});
+    if(supaError||!supa?.user)return res.status(400).send('Google sign-in is not enabled in Supabase. Enable the Google provider and try again.');
+    const db=readDb(),email=String(supa.user.email||p.email).trim().toLowerCase();
     let u=db.users.find(x=>x.googleId===p.sub)||db.users.find(x=>x.email===email);
     if(u){
       if(u.status==='blocked'||u.status==='suspended')return res.status(403).send('This account is not available. Contact support.');

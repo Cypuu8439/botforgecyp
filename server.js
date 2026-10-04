@@ -7,6 +7,7 @@ const cookieParser=require('cookie-parser');
 const helmet=require('helmet');
 const crypto=require('crypto');
 const {OAuth2Client}=require('google-auth-library');
+const {createClient}=require('@supabase/supabase-js');
 
 const app=express();
 const PORT=process.env.PORT||3000;
@@ -15,6 +16,9 @@ if(process.env.NODE_ENV==='production'&&!JWT_SECRET)throw new Error('JWT_SECRET 
 const GOOGLE_CLIENT_ID=process.env.GOOGLE_CLIENT_ID||'';
 const GOOGLE_CLIENT_SECRET=process.env.GOOGLE_CLIENT_SECRET||'';
 const GOOGLE_REDIRECT_URI=process.env.GOOGLE_REDIRECT_URI||'';
+const SUPABASE_URL=process.env.SUPABASE_URL||'';
+const SUPABASE_ANON_KEY=process.env.SUPABASE_ANON_KEY||'';
+const supabase=SUPABASE_URL&&SUPABASE_ANON_KEY?createClient(SUPABASE_URL,SUPABASE_ANON_KEY,{auth:{autoRefreshToken:false,persistSession:false,detectSessionInUrl:false}}):null;
 const googleClient=GOOGLE_CLIENT_ID&&GOOGLE_CLIENT_SECRET&&GOOGLE_REDIRECT_URI?new OAuth2Client(GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET,GOOGLE_REDIRECT_URI):null;
 const ROOT=__dirname;
 const DATA_DIR=path.join(ROOT,'data');
@@ -97,29 +101,33 @@ app.get('/api/auth/google/callback',async(req,res)=>{
 
 app.post('/api/auth/register',async(req,res)=>{
   const {name,username,email,phone='',password}=req.body||{};
+  if(!supabase)return res.status(503).json({error:'Supabase authentication is not configured on the server.'});
   if(!name||name.trim().length<2)return res.status(400).json({error:'Enter your full name.'});
   if(!/^[A-Za-z0-9_.-]{3,30}$/.test(username||''))return res.status(400).json({error:'Username must be 3–30 valid characters.'});
   if(!/^\S+@\S+\.\S+$/.test(email||''))return res.status(400).json({error:'Enter a valid email address.'});
   if(!password||password.length<8)return res.status(400).json({error:'Password must be at least 8 characters.'});
-  const db=readDb(),normalized=email.trim().toLowerCase();
-  if(db.users.some(u=>u.email===normalized))return res.status(409).json({error:'An account with this email already exists.'});
-  if(db.users.some(u=>u.username===username))return res.status(409).json({error:'Username is already in use.'});
-  const user={id:id('usr'),name:name.trim(),username,email:normalized,phone:String(phone||'').trim(),passwordHash:await bcrypt.hash(password,12),role:'user',status:'active',created:new Date().toISOString()};
-  db.users.push(user);
-  db.notifications.push({id:id('n'),userId:user.id,title:'Welcome to BFBotForge Cyp',message:'Your account is ready. Explore bots, wallet and deployments.',type:'welcome',read:false,at:new Date().toISOString()});
-  audit(db,user.id,'register',[user.id]);
-  writeDb(db);setSession(res,user);res.json({user:publicUser(user)});
+  const normalized=email.trim().toLowerCase();
+  const {data,error}=await supabase.auth.signUp({email:normalized,password,options:{data:{name:name.trim(),username,phone:String(phone||'').trim()}}});
+  if(error)return res.status(400).json({error:error.message});
+  const u=data.user;
+  if(!u)return res.status(400).json({error:'Account could not be created.'});
+  const user={id:u.id,name:name.trim(),username,email:normalized,phone:String(phone||'').trim(),googleId:null,avatar:'',passwordHash:null,role:'user',status:'active',created:u.created_at||new Date().toISOString(),supabaseId:u.id};
+  if(data.session){setSession(res,user);res.json({user:publicUser(user)});}
+  else res.status(201).json({pendingVerification:true,message:'Account created. Check your email to verify your account before signing in.'});
 });
 
 app.post('/api/auth/login',async(req,res)=>{
-  const {email,password}=req.body||{}; const db=readDb(); const u=db.users.find(x=>x.email===String(email||'').trim().toLowerCase());
-  if(!u)return res.status(401).json({error:'Invalid email or password.'});
-  if(!u.passwordHash)return res.status(401).json({error:'This account uses Google sign-in. Continue with Google.'});
-  if(!(await bcrypt.compare(String(password||''),u.passwordHash)))return res.status(401).json({error:'Invalid email or password.'});
-  if(u.status==='blocked')return res.status(403).json({error:'This account is blocked. Contact support.'});
-  if(u.status==='suspended')return res.status(403).json({error:'This account is suspended. Contact support.'});
-  audit(db,u.id,'login',[u.id]);writeDb(db);setSession(res,u);res.json({user:publicUser(u)});
+  const {email,password}=req.body||{};
+  if(!supabase)return res.status(503).json({error:'Supabase authentication is not configured on the server.'});
+  const normalized=String(email||'').trim().toLowerCase();
+  const {data,error}=await supabase.auth.signInWithPassword({email:normalized,password:String(password||'')});
+  if(error||!data.user)return res.status(401).json({error:'Invalid email or password.'});
+  const meta=data.user.user_metadata||{};
+  const u={id:data.user.id,name:String(meta.name||data.user.email?.split('@')[0]||'User'),username:String(meta.username||data.user.email?.split('@')[0]||'user'),email:data.user.email||normalized,phone:String(meta.phone||''),googleId:null,avatar:String(meta.avatar||''),passwordHash:null,role:'user',status:'active',created:data.user.created_at||new Date().toISOString(),supabaseId:data.user.id};
+  setSession(res,u);
+  res.json({user:publicUser(u)});
 });
+
 app.post('/api/auth/logout',(req,res)=>{res.clearCookie('bf_session',{httpOnly:true,sameSite:'lax',secure:process.env.NODE_ENV==='production',path:'/'});res.json({ok:true});});
 app.get('/api/auth/me',auth,(req,res)=>res.json({user:publicUser(req.user)}));
 

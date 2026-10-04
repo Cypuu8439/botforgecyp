@@ -9,7 +9,7 @@ A cleaned-up, responsive bot-hosting SaaS frontend based on the supplied project
 - Complete client dashboard with wallet, active bots, notifications and deployment state.
 - Real navigation targets for Recovery, Notifications, Redeem & Earn, Profile and 404.
 - Bot marketplace empty-state and database-ready bot configuration structure.
-- Multi-step deployment UI foundation with session validation and masked local demo state.
+- Multi-step deployment UI foundation that never collects third-party passwords, session tokens or browser cookies.
 - Wallet/deposit UI for KSh 50–3,000 with server-verification warnings.
 - Profile and referral UI.
 - Admin dashboard foundation with user search, error feed, bulk activate/block/suspend/delete, fix-all-errors and audit log.
@@ -23,7 +23,7 @@ This ZIP is still a static frontend. A browser-only application cannot safely pr
 
 Before real use, connect a backend for:
 - Password hashing and sessions
-- Google/GitHub OAuth
+- Google OAuth
 - Database-backed users, bots and deployments
 - Server-side wallet ledger
 - M-Pesa Daraja and/or Paystack integration

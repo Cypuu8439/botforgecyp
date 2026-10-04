@@ -2,3 +2,23 @@
 
 /* Sidebar / mobile navigation fix */
 .sidebar-layout{grid-template-columns:260px minmax(0,1fr);align-items:stretch}.sidebar{width:260px;box-sizing:border-box;position:sticky;top:72px;height:calc(100vh - 72px);z-index:30}.sidebar .side-link{min-height:44px}.dashboard{min-width:0}.mobile-nav{pointer-events:none;opacity:0;transition:opacity .2s ease}.nav-open .mobile-nav{pointer-events:auto;opacity:1}.mobile-nav-panel{z-index:2;overflow-y:auto}.nav-backdrop{z-index:1}.mobile-nav-panel .side-link{min-height:46px}.mobile-nav-panel .brand{margin-bottom:14px}.side-link.active{font-weight:800}.side-link.logout{margin-top:10px;border-top:1px solid var(--border);border-radius:0;padding-top:16px}@media(max-width:900px){.sidebar-layout{display:block}.sidebar{display:none}.dashboard{width:100%;padding-left:5%;padding-right:5%}.mobile-menu{display:inline-flex!important;align-items:center;justify-content:center;flex:0 0 auto}.mobile-nav-panel{transform:translateX(-105%);transition:transform .22s ease}.nav-open .mobile-nav-panel{transform:translateX(0)}}@media(min-width:901px){.mobile-nav{display:none!important}.mobile-menu{display:none!important}}
+
+/* Enhanced BFBotForge navigation */
+.side-shell{display:flex;flex-direction:column;min-height:100%;height:100%}
+.side-brand{margin:2px 6px 20px}
+.sidebar{padding:18px 12px!important}
+.side-label{margin:16px 8px 7px;font-size:10px;letter-spacing:.14em;font-weight:800;color:var(--muted)}
+.side-link{display:flex!important;align-items:center;gap:11px;min-height:42px;padding:9px 11px!important;border-radius:10px!important;text-decoration:none;transition:background .15s ease,transform .15s ease,color .15s ease}
+.side-link:hover{transform:translateX(2px);background:var(--surface-2);color:var(--text)}
+.side-link.active{background:var(--surface-2);font-weight:800;box-shadow:inset 3px 0 0 var(--accent)}
+.nav-icon{width:20px;flex:0 0 20px;text-align:center;font-size:16px;line-height:1}
+.side-status-dot{width:7px;height:7px;border-radius:50%;background:#12b76a;margin-left:auto;box-shadow:0 0 0 3px rgba(18,183,106,.12)}
+.side-footer{margin-top:auto;padding-top:14px;border-top:1px solid var(--border)}
+.side-account{display:flex;align-items:center;gap:10px;padding:8px 9px 12px;font-size:12px}
+.side-account b{display:block;font-size:12px}.side-account small{display:block;color:var(--muted);margin-top:2px}
+.account-avatar{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:var(--text);color:var(--surface);font-size:11px;font-weight:900}
+.side-link.logout{margin-top:2px!important;border:1px solid var(--border);background:transparent}
+.side-link.logout:hover{background:rgba(217,45,32,.08);color:var(--danger);transform:none}
+.mobile-nav-panel{padding:18px 14px!important}
+.mobile-nav-panel .side-shell{min-height:calc(100vh - 36px)}
+@media(max-width:900px){.sidebar-layout{display:block}.sidebar{display:none}.dashboard,.form-page{width:100%;box-sizing:border-box}.mobile-nav-panel{width:min(340px,90vw)!important}.mobile-nav-panel .side-link{min-height:44px!important}.mobile-nav-panel .side-footer{padding-bottom:8px}.mobile-menu{display:inline-flex!important}}

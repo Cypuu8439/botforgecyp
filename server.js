@@ -5,10 +5,16 @@ const bcrypt=require('bcryptjs');
 const jwt=require('jsonwebtoken');
 const cookieParser=require('cookie-parser');
 const helmet=require('helmet');
+const crypto=require('crypto');
+const {OAuth2Client}=require('google-auth-library');
 
 const app=express();
 const PORT=process.env.PORT||3000;
 const JWT_SECRET=process.env.JWT_SECRET||'change-this-development-secret';
+const GOOGLE_CLIENT_ID=process.env.GOOGLE_CLIENT_ID||'';
+const GOOGLE_CLIENT_SECRET=process.env.GOOGLE_CLIENT_SECRET||'';
+const GOOGLE_REDIRECT_URI=process.env.GOOGLE_REDIRECT_URI||'';
+const googleClient=GOOGLE_CLIENT_ID&&GOOGLE_CLIENT_SECRET&&GOOGLE_REDIRECT_URI?new OAuth2Client(GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET,GOOGLE_REDIRECT_URI):null;
 const ROOT=__dirname;
 const DATA_DIR=path.join(ROOT,'data');
 const DB_FILE=path.join(DATA_DIR,'db.json');
@@ -38,6 +44,52 @@ function audit(db,actor,action,targetIds,note=''){db.audit.unshift({id:id('audit
 app.use(helmet({contentSecurityPolicy:false}));
 app.use(express.json({limit:'1mb'}));
 app.use(cookieParser());
+
+
+app.get('/api/auth/google',(req,res)=>{
+  if(!googleClient)return res.status(503).send('Google sign-in is not configured on the server.');
+  const state=crypto.randomBytes(32).toString('hex');
+  res.cookie('bf_oauth_state',state,{httpOnly:true,sameSite:'lax',secure:process.env.NODE_ENV==='production',maxAge:10*60*1000,path:'/'});
+  const url=googleClient.generateAuthUrl({access_type:'offline',scope:['openid','email','profile'],prompt:'select_account',state});
+  res.redirect(url);
+});
+app.get('/api/auth/google/callback',async(req,res)=>{
+  try{
+    if(!googleClient)return res.status(503).send('Google sign-in is not configured on the server.');
+    const state=String(req.query.state||''),saved=String(req.cookies.bf_oauth_state||'');
+    res.clearCookie('bf_oauth_state',{httpOnly:true,sameSite:'lax',secure:process.env.NODE_ENV==='production',path:'/'});
+    if(!state||!saved||!crypto.timingSafeEqual(Buffer.from(state),Buffer.from(saved)))return res.status(400).send('Google sign-in could not be verified. Please try again.');
+    const code=String(req.query.code||'');
+    if(!code)return res.status(400).send('Google did not return an authorization code.');
+    const {tokens}=await googleClient.getToken(code);
+    if(!tokens.id_token)return res.status(400).send('Google did not return a valid identity token.');
+    const ticket=await googleClient.verifyIdToken({idToken:tokens.id_token,audience:GOOGLE_CLIENT_ID});
+    const p=ticket.getPayload();
+    if(!p?.sub||!p.email||p.email_verified!==true)return res.status(400).send('Your Google account email could not be verified.');
+    const db=readDb(),email=String(p.email).trim().toLowerCase();
+    let u=db.users.find(x=>x.googleId===p.sub)||db.users.find(x=>x.email===email);
+    if(u){
+      if(u.status==='blocked'||u.status==='suspended')return res.status(403).send('This account is not available. Contact support.');
+      u.googleId=p.sub;
+      if(!u.name&&p.name)u.name=String(p.name);
+      if(!u.avatar&&p.picture)u.avatar=String(p.picture);
+    }else{
+      const base=(email.split('@')[0]||'user').toLowerCase().replace(/[^a-z0-9_.-]/g,'').slice(0,24)||'user';
+      let username=base,n=1;
+      while(db.users.some(x=>x.username===username))username=base.slice(0,20)+'_'+n++;
+      u={id:id('usr'),name:String(p.name||email.split('@')[0]).trim(),username,email,phone:'',googleId:p.sub,avatar:p.picture?String(p.picture):'',passwordHash:null,role:'user',status:'active',created:new Date().toISOString()};
+      db.users.push(u);
+      db.notifications.push({id:id('n'),userId:u.id,title:'Welcome to BFBotForge Cyp',message:'Your Google account is connected. Your hosting dashboard is ready.',type:'welcome',read:false,at:new Date().toISOString()});
+      audit(db,u.id,'google_register',[u.id]);
+    }
+    audit(db,u.id,'google_login',[u.id]);
+    writeDb(db);setSession(res,u);
+    res.redirect(u.role==='admin'?'/admin.html':'/dashboard.html');
+  }catch(err){
+    console.error('Google OAuth error:',err);
+    res.status(500).send('Google sign-in failed. Please try again.');
+  }
+});
 
 app.post('/api/auth/register',async(req,res)=>{
   const {name,username,email,phone='',password}=req.body||{};

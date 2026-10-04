@@ -1,0 +1,1 @@
+(function(){try{const u=JSON.parse(localStorage.getItem('bf_user')||'null');if(!u)location.replace('login.html');else if(u.role!=='admin')location.replace('dashboard.html')}catch{location.replace('login.html')}})();

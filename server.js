@@ -29,15 +29,19 @@ function readDb(){try{return JSON.parse(fs.readFileSync(DB_FILE,'utf8'));}catch{
 function writeDb(db){fs.mkdirSync(DATA_DIR,{recursive:true});fs.writeFileSync(DB_FILE,JSON.stringify(db,null,2));}
 function id(p){return p+'_'+Date.now()+'_'+Math.random().toString(36).slice(2,8);}
 function publicUser(u){return {id:u.id,name:u.name,username:u.username,email:u.email,phone:u.phone||'',role:u.role||'user',status:u.status||'active',created:u.created};}
-function sign(u){return jwt.sign({sub:u.id},JWT_SECRET,{expiresIn:'7d'});}
+function sign(u){return jwt.sign({sub:u.id,name:u.name,username:u.username,email:u.email,phone:u.phone||'',role:u.role||'user',status:u.status||'active',created:u.created,supabaseId:u.supabaseId||u.id},JWT_SECRET,{expiresIn:'7d'});}
 function setSession(res,u){res.cookie('bf_session',sign(u),{httpOnly:true,sameSite:'lax',secure:process.env.NODE_ENV==='production',maxAge:7*24*60*60*1000,path:'/'});}
 function auth(req,res,next){
   try{
     const token=req.cookies.bf_session;
     if(!token)return res.status(401).json({error:'Authentication required'});
     const payload=jwt.verify(token,JWT_SECRET);
-    const db=readDb(); const u=db.users.find(x=>x.id===payload.sub);
-    if(!u)return res.status(401).json({error:'Session expired'});
+    const db=readDb();
+    let u=db.users.find(x=>x.id===payload.sub);
+    if(!u){
+      if(!payload.email)return res.status(401).json({error:'Session expired'});
+      u={id:payload.sub,name:String(payload.name||payload.email.split('@')[0]),username:String(payload.username||payload.email.split('@')[0]),email:String(payload.email).toLowerCase(),phone:String(payload.phone||''),role:payload.role||'user',status:payload.status||'active',created:payload.created||new Date().toISOString(),supabaseId:payload.supabaseId||payload.sub};
+    }
     if(u.status==='blocked')return res.status(403).json({error:'Account is blocked'});
     if(u.status==='suspended')return res.status(403).json({error:'Account is suspended'});
     req.user=u; req.db=db; next();

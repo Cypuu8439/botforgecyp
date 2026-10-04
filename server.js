@@ -5,21 +5,15 @@ const bcrypt=require('bcryptjs');
 const jwt=require('jsonwebtoken');
 const cookieParser=require('cookie-parser');
 const helmet=require('helmet');
-const crypto=require('crypto');
-const {OAuth2Client}=require('google-auth-library');
 const {createClient}=require('@supabase/supabase-js');
 
 const app=express();
 const PORT=process.env.PORT||3000;
 const JWT_SECRET=process.env.JWT_SECRET||'';
 if(process.env.NODE_ENV==='production'&&!JWT_SECRET)throw new Error('JWT_SECRET must be configured in production.');
-const GOOGLE_CLIENT_ID=process.env.GOOGLE_CLIENT_ID||'';
-const GOOGLE_CLIENT_SECRET=process.env.GOOGLE_CLIENT_SECRET||'';
-const GOOGLE_REDIRECT_URI=process.env.GOOGLE_REDIRECT_URI||'';
 const SUPABASE_URL=process.env.SUPABASE_URL||'';
 const SUPABASE_ANON_KEY=process.env.SUPABASE_ANON_KEY||'';
 const supabase=SUPABASE_URL&&SUPABASE_ANON_KEY?createClient(SUPABASE_URL,SUPABASE_ANON_KEY,{auth:{autoRefreshToken:false,persistSession:false,detectSessionInUrl:false}}):null;
-const googleClient=GOOGLE_CLIENT_ID&&GOOGLE_CLIENT_SECRET&&GOOGLE_REDIRECT_URI?new OAuth2Client(GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET,GOOGLE_REDIRECT_URI):null;
 const ROOT=__dirname;
 const DATA_DIR=path.join(ROOT,'data');
 const DB_FILE=path.join(DATA_DIR,'db.json');
@@ -57,9 +51,13 @@ app.use(cookieParser());
 
 app.get('/api/auth/google',async(req,res)=>{
   res.set('Cache-Control','no-store');
-  if(!supabase)return res.status(503).send('Supabase authentication is not configured on the server.');
-  const redirectTo=process.env.SUPABASE_AUTH_REDIRECT_URI||(`${req.protocol}://${req.get('host')}/auth-callback.html`);
-  try{const {data,error}=await supabase.auth.signInWithOAuth({provider:'google',options:{redirectTo}});if(error||!data?.url)return res.status(503).send(error?.message||'Google sign-in could not be started.');res.redirect(data.url);}catch(err){console.error('Google OAuth start error:',err);res.status(500).send('Google sign-in could not be started.');}
+  if(!supabase)return res.status(503).send('Google sign-in is temporarily unavailable.');
+  const redirectTo=process.env.SUPABASE_AUTH_REDIRECT_URI||'https://botforgecyp.vercel.app/auth-callback.html';
+  try{
+    const {data,error}=await supabase.auth.signInWithOAuth({provider:'google',options:{redirectTo,queryParams:{prompt:'select_account'}}});
+    if(error||!data?.url)return res.status(503).send('Google sign-in could not be started.');
+    res.redirect(303,data.url);
+  }catch(err){console.error('Google OAuth start error:',err);res.status(500).send('Google sign-in could not be started.');}
 });
 
 app.post('/api/auth/supabase-session',async(req,res)=>{

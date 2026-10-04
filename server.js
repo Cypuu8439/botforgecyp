@@ -137,13 +137,13 @@ app.post('/api/me/notifications/:notificationId/read',auth,(req,res)=>{
 });
 
 app.post('/api/deployments',auth,(req,res)=>{
-  const {botId,botName='Bot',packageName='50-20',price=0,session}=req.body||{};
-  if(typeof session!=='string'||session.length<8||session.length>512)return res.status(400).json({error:'Invalid session ID/link.'});
+  const {botId,botName='Bot',packageName='50-20',price=0}=req.body||{};
+  if(!botId||typeof botId!=='string'||typeof botName!=='string'||typeof packageName!=='string')return res.status(400).json({error:'Invalid deployment configuration.'});
   const cost=Number(price); if(!Number.isFinite(cost)||cost<0)return res.status(400).json({error:'Invalid deployment price.'});
   const db=req.db;
   const balance=db.transactions.filter(x=>x.userId===req.user.id&&(x.status==='confirmed'||x.status==='demo-confirmed')).reduce((s,x)=>s+Number(x.amount),0);
   if(balance<cost)return res.status(402).json({error:'Insufficient wallet balance.'});
-  const d={id:id('dep'),userId:req.user.id,botId,bot:botName,package:packageName,price:cost,status:'Running',created:new Date().toISOString(),sessionMasked:session.slice(0,4)+'••••'+session.slice(-3)};
+  const d={id:id('dep'),userId:req.user.id,botId,bot:botName,package:packageName,price:cost,status:'Running',created:new Date().toISOString(),credentialMode:'managed'};
   db.deployments.unshift(d);db.transactions.push({id:id('tx'),userId:req.user.id,type:'deployment',amount:-cost,status:'confirmed',deploymentId:d.id,at:new Date().toISOString()});
   db.notifications.unshift({id:id('n'),userId:req.user.id,title:'Deployment started',message:botName+' is now running.',type:'deploy',read:false,at:new Date().toISOString()});
   writeDb(db);res.json({deployment:d});
